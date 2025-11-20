@@ -1,0 +1,7 @@
+autonexus-backend/__pycache__/
+autonexus-frontend/node_modules/
+autonexus-backend/connectors/__pycache__/*.pyc
+autonexus-backend/venv/*
+autonexus-backend/autonexus_data.json
+autonexus-backend/.env
+autonexus-frontend/.env
