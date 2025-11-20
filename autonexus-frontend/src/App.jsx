@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   LayoutDashboard, Network, Bot, Settings, Terminal, Send, Cpu, 
-  CheckCircle, AlertCircle, Activity, Play, Pause, Trash2, Box, Server, Wifi, WifiOff, Key, X
+  CheckCircle, AlertCircle, Activity, Play, Pause, Trash2, Box, Server, Wifi, WifiOff, Key, X, Mail
 } from 'lucide-react';
 
 const API_URL = "http://localhost:8000/api";
@@ -21,10 +21,11 @@ const StatusBadge = ({ status }) => {
 
 const ConnectionsTab = ({ isBackendOnline }) => {
   const [services, setServices] = useState([
-    { id: 'twitter', name: 'X (Twitter) API', icon: '🐦', configured: false, desc: 'Bearer Token', placeholder: 'AAAA...' },
-    { id: 'openai', name: 'OpenAI', icon: '🧠', configured: false, desc: 'Intelligence Agentique', placeholder: 'sk-...' },
+    { id: 'twitter', name: 'X (Twitter)', icon: '🐦', configured: false, desc: 'Bearer Token', placeholder: 'AAAA...' },
+    { id: 'notion', name: 'Notion', icon: '📝', configured: false, desc: 'Integration Secret', placeholder: 'secret_...' },
+    { id: 'gmail', name: 'Gmail SMTP', icon: '📧', configured: false, desc: 'Email:AppPassword', placeholder: 'me@gmail.com:xxxx xxxx xxxx xxxx' },
+    { id: 'openai', name: 'OpenAI', icon: '🧠', configured: false, desc: 'Agent Intelligence', placeholder: 'sk-...' },
     { id: 'discord', name: 'Discord Bot', icon: '👾', configured: false, desc: 'Bot Token', placeholder: 'Bot Token' },
-    { id: 'notion', name: 'Notion', icon: '📝', configured: false, desc: 'Internal Integration Secret', placeholder: 'secret_...' },
   ]);
 
   const [selectedService, setSelectedService] = useState(null);
@@ -52,10 +53,10 @@ const ConnectionsTab = ({ isBackendOnline }) => {
       });
       if (res.ok) {
         setServices(prev => prev.map(item => item.id === selectedService.id ? { ...item, configured: true } : item));
-        setSelectedService(null); setApiKeyInput(''); setStatusMsg('Clé sauvegardée !');
+        setSelectedService(null); setApiKeyInput(''); setStatusMsg('Credential Saved!');
         setTimeout(() => setStatusMsg(''), 3000);
       }
-    } catch (e) { setStatusMsg('Erreur de sauvegarde'); }
+    } catch (e) { setStatusMsg('Save Error'); }
   };
 
   return (
@@ -65,21 +66,24 @@ const ConnectionsTab = ({ isBackendOnline }) => {
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
           <div className="bg-slate-900 border border-slate-700 p-6 rounded-xl w-full max-w-md shadow-2xl">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xl font-bold text-white flex items-center gap-2">{selectedService.icon} {selectedService.name}</h3>
+              <h3 className="text-xl font-bold text-white flex items-center gap-2">{selectedService.icon} Configure {selectedService.name}</h3>
               <button onClick={() => setSelectedService(null)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
             </div>
             <div className="space-y-4">
               <div>
-                <label className="block text-xs text-slate-400 mb-1 uppercase">Clé API / Token</label>
+                <label className="block text-xs text-slate-400 mb-1 uppercase">
+                  {selectedService.id === 'gmail' ? 'Email : App Password' : 'API Key / Token'}
+                </label>
                 <input type="password" value={apiKeyInput} onChange={(e) => setApiKeyInput(e.target.value)} placeholder={selectedService.placeholder} className="w-full bg-slate-800 border border-slate-700 rounded p-3 text-white outline-none font-mono text-sm" />
+                {selectedService.id === 'gmail' && <p className="text-[10px] text-emerald-400 mt-1">Required format: email@gmail.com:abcd efgh ijkl mnop</p>}
               </div>
-              <button onClick={handleSave} className="w-full bg-blue-600 hover:bg-blue-500 text-white py-2 rounded-lg font-medium transition-colors">Sauvegarder</button>
+              <button onClick={handleSave} className="w-full bg-blue-600 hover:bg-blue-500 text-white py-2 rounded-lg font-medium transition-colors">Save Credential</button>
             </div>
           </div>
         </div>
       )}
       <div className="bg-slate-800 p-6 rounded-xl border border-slate-700">
-        <h2 className="text-xl font-bold text-white mb-2">Hub de Connexions</h2>
+        <h2 className="text-xl font-bold text-white mb-2">Connection Hub</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
           {services.map((service) => (
             <div key={service.id} className={`p-4 rounded-xl border transition-all flex items-center justify-between ${service.configured ? 'bg-emerald-900/10 border-emerald-500/30' : 'bg-slate-800 border-slate-700'}`}>
@@ -87,7 +91,7 @@ const ConnectionsTab = ({ isBackendOnline }) => {
                 <div className="text-2xl bg-slate-900 w-12 h-12 flex items-center justify-center rounded-lg border border-slate-700">{service.icon}</div>
                 <div><h3 className="font-bold text-white">{service.name}</h3><p className="text-xs text-slate-400">{service.desc}</p></div>
               </div>
-              <button onClick={() => { setSelectedService(service); setApiKeyInput(''); }} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors border ${service.configured ? 'bg-slate-800 text-emerald-400 border-emerald-500/30' : 'bg-blue-600 text-white border-transparent'}`}>{service.configured ? 'Modifier' : 'Connecter'}</button>
+              <button onClick={() => { setSelectedService(service); setApiKeyInput(''); }} className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors border ${service.configured ? 'bg-slate-800 text-emerald-400 border-emerald-500/30' : 'bg-blue-600 text-white border-transparent'}`}>{service.configured ? 'Edit' : 'Connect'}</button>
             </div>
           ))}
         </div>
@@ -105,8 +109,8 @@ const DashboardTab = ({ setActiveTab, isBackendOnline }) => {
   return (
     <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
       <div className="p-6 border-b border-slate-700 flex justify-between items-center">
-        <h2 className="text-lg font-semibold text-white">Agents Actifs</h2>
-        <button onClick={() => setActiveTab('builder')} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm flex items-center"><Bot className="w-4 h-4 mr-2" /> Créer</button>
+        <h2 className="text-lg font-semibold text-white">Active Agents</h2>
+        <button onClick={() => setActiveTab('builder')} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm flex items-center"><Bot className="w-4 h-4 mr-2" /> Create</button>
       </div>
       <div className="divide-y divide-slate-700">
         {workflows.map((wf) => (
@@ -115,14 +119,14 @@ const DashboardTab = ({ setActiveTab, isBackendOnline }) => {
             <StatusBadge status={wf.status} />
           </div>
         ))}
-        {workflows.length === 0 && <div className="p-8 text-center text-slate-500">Aucun agent configuré.</div>}
+        {workflows.length === 0 && <div className="p-8 text-center text-slate-500">No agents configured.</div>}
       </div>
     </div>
   );
 };
 
 const AgentBuilderTab = ({ setActiveTab }) => {
-  const [chatHistory, setChatHistory] = useState([{ role: 'agent', content: "Décrivez votre besoin (ex: 'Surveille Notion pour le mot Projet Alpha').", type: 'text' }]);
+  const [chatHistory, setChatHistory] = useState([{ role: 'agent', content: "Describe your automation need (e.g., 'Watch Notion for Project Alpha and send me an email').", type: 'text' }]);
   const [userInput, setUserInput] = useState('');
   const [formData, setFormData] = useState({});
   const [formMeta, setFormMeta] = useState({ source: '', dest: '' });
@@ -141,29 +145,18 @@ const AgentBuilderTab = ({ setActiveTab }) => {
       const data = await res.json();
       setChatHistory(prev => [...prev, data]);
       
-      // Capture les métadonnées si c'est un formulaire
       if (data.type === 'form') {
-        setFormMeta({ 
-          source: data.formData.serviceSource, 
-          dest: data.formData.serviceDest 
-        });
-        // Reset form data
+        setFormMeta({ source: data.formData.serviceSource, dest: data.formData.serviceDest });
         setFormData({});
       }
     } catch (e) {
-      setChatHistory(prev => [...prev, { role: 'agent', content: "Erreur Backend.", type: 'error' }]);
+      setChatHistory(prev => [...prev, { role: 'agent', content: "Backend Error.", type: 'error' }]);
     }
   };
 
   const deploy = async () => {
     try {
-      // Construction du payload dynamique
-      const payload = {
-        serviceSource: formMeta.source,
-        serviceDest: formMeta.dest,
-        settings: formData // On envoie tout ce que l'utilisateur a rempli comme "settings"
-      };
-
+      const payload = { serviceSource: formMeta.source, serviceDest: formMeta.dest, settings: formData };
       const res = await fetch(`${API_URL}/agent/deploy`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -188,22 +181,18 @@ const AgentBuilderTab = ({ setActiveTab }) => {
                       type={f.type} 
                       placeholder={f.placeholder}
                       className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-white outline-none focus:border-blue-500"
-                      onChange={e => {
-                        setFormData(prev => ({ ...prev, [f.key]: e.target.value }));
-                      }}
+                      onChange={e => { setFormData(prev => ({ ...prev, [f.key]: e.target.value })); }}
                     />
                   </div>
                 ))}
-                <button onClick={deploy} className="w-full bg-emerald-600 hover:bg-emerald-500 py-2 rounded text-sm font-bold mt-2 transition-colors">
-                  Activer l'Agent
-                </button>
+                <button onClick={deploy} className="w-full bg-emerald-600 hover:bg-emerald-500 py-2 rounded text-sm font-bold mt-2 transition-colors">Activate Agent</button>
               </div>
             )}
           </div>
         ))}
       </div>
       <div className="p-4 border-t border-slate-700 flex gap-2">
-        <input value={userInput} onChange={e => setUserInput(e.target.value)} className="flex-1 bg-slate-800 rounded-lg px-4 outline-none text-white" onKeyDown={e => e.key === 'Enter' && sendMessage()} placeholder="Écrivez votre demande..." />
+        <input value={userInput} onChange={e => setUserInput(e.target.value)} className="flex-1 bg-slate-800 rounded-lg px-4 outline-none text-white" onKeyDown={e => e.key === 'Enter' && sendMessage()} placeholder="Type your request..." />
         <button onClick={sendMessage} className="bg-blue-600 p-2 rounded-lg text-white"><Send className="w-5 h-5" /></button>
       </div>
     </div>
@@ -222,9 +211,9 @@ export default function AutoNexus() {
     <div className="min-h-screen bg-slate-950 text-slate-200 font-sans flex">
       <aside className="w-64 bg-slate-900 border-r border-slate-800 p-4 flex flex-col gap-2">
         <div className="font-bold text-xl text-emerald-400 mb-6 flex items-center gap-2"><Box /> AutoNexus</div>
-        <button onClick={() => setActiveTab('builder')} className={`p-3 rounded flex gap-3 ${activeTab === 'builder' ? 'bg-blue-600' : 'hover:bg-slate-800'}`}><Bot /> Architecte</button>
+        <button onClick={() => setActiveTab('builder')} className={`p-3 rounded flex gap-3 ${activeTab === 'builder' ? 'bg-blue-600' : 'hover:bg-slate-800'}`}><Bot /> Architect</button>
         <button onClick={() => setActiveTab('dashboard')} className={`p-3 rounded flex gap-3 ${activeTab === 'dashboard' ? 'bg-slate-800' : 'hover:bg-slate-800'}`}><LayoutDashboard /> Dashboard</button>
-        <button onClick={() => setActiveTab('connections')} className={`p-3 rounded flex gap-3 ${activeTab === 'connections' ? 'bg-slate-800 border border-blue-500/30' : 'hover:bg-slate-800'}`}><Network /> Connexions</button>
+        <button onClick={() => setActiveTab('connections')} className={`p-3 rounded flex gap-3 ${activeTab === 'connections' ? 'bg-slate-800 border border-blue-500/30' : 'hover:bg-slate-800'}`}><Network /> Connections</button>
         <div className="mt-auto text-xs text-slate-500 flex items-center gap-2">
           {isBackendOnline ? <Wifi className="text-emerald-500 w-4 h-4" /> : <WifiOff className="text-red-500 w-4 h-4" />} Server: {isBackendOnline ? 'Online' : 'Offline'}
         </div>

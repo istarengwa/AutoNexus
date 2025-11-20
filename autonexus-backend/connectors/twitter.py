@@ -3,14 +3,10 @@ from datetime import datetime, timezone
 
 async def fetch(settings: dict, token: str):
     """
-    Récupère les tweets récents.
-    Args:
-        settings: dict contenant la 'query'
-        token: Le Bearer Token Twitter
+    Fetches recent tweets.
     """
     query = settings.get("query")
-    if not token or not query:
-        return []
+    if not token or not query: return []
     
     headers = {"Authorization": f"Bearer {token}"}
     url = "https://api.twitter.com/2/tweets/search/recent"
