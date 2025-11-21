@@ -12,15 +12,14 @@ import os
 from datetime import datetime, timezone
 from openai import OpenAI 
 
-# --- IMPORT CONNECTORS ---
-from connectors import twitter, notion, gmail
+from connectors import twitter, notion, gmail, discord
 
 CONNECTORS = {
     "twitter": twitter,
-    "notion": notion
+    "notion": notion,
+    "discord": discord
 }
 
-# --- TRANSLATIONS FOR NOTIFICATIONS ---
 TRANSLATIONS = {
     "en": {
         "new": "New Item", "update": "Update", "link": "Open Link",
@@ -29,20 +28,13 @@ TRANSLATIONS = {
         "source_label": "Source", "query_label": "Query"
     },
     "fr": {
-        "new": "Nouvel élément", "update": "Mise à jour", "link": "Ouvrir le lien",
+        "new": "Nouveau Message", "update": "Modifié", "link": "Voir le message",
         "footer": "via", "welcome_title": "🚀 Agent Activé", 
-        "welcome_desc": "Surveillance active. Je vous notifierai en Français.",
-        "source_label": "Source", "query_label": "Recherche"
-    },
-    "es": {
-        "new": "Nuevo elemento", "update": "Actualización", "link": "Abrir enlace",
-        "footer": "vía", "welcome_title": "🚀 Agente Activado", 
-        "welcome_desc": "Vigilancia activa. Le notificaré en Español.",
-        "source_label": "Fuente", "query_label": "Búsqueda"
+        "welcome_desc": "Je surveille le salon Discord. Je vous notifierai des discussions.",
+        "source_label": "Source", "query_label": "Filtre"
     }
 }
 
-# --- JSON File System ---
 DB_FILE = "autonexus_data.json"
 db = {"workflows": [], "credentials": {}, "item_states": {}}
 
@@ -56,39 +48,46 @@ def load_db():
                 db["credentials"] = data.get("credentials", {})
                 s = data.get("item_states", {})
                 db["item_states"] = {} if isinstance(s, list) else s
-                print(f"[SYSTEM] DB Loaded: {len(db['workflows'])} agents.")
-        except: pass
+                print(f"[SYSTEM] 📂 DB Loaded.")
+                print(f"[SYSTEM] 🔑 Keys found: {list(db['credentials'].keys())}")
+        except Exception as e:
+            print(f"[SYSTEM] ❌ Error reading DB: {e}")
+    else:
+        print("[SYSTEM] ⚠️ No save file found (First run?)")
 
 def save_db():
     try:
         with open(DB_FILE, "w", encoding="utf-8") as f:
             json.dump(db, f, indent=4, ensure_ascii=False)
-    except: pass
+    except Exception as e:
+        print(f"[SYSTEM] ❌ Error saving DB: {e}")
 
-# --- Polyvalent Worker (Discord & Email) ---
 async def run_infinite_loop(workflow: dict):
     source_type = workflow.get("source")
+    workflow_id = workflow.get("id") # ID unique de l'agent
     settings = workflow.get("settings", {})
     connector = CONNECTORS.get(source_type)
     
-    # Destination Settings
     webhook = settings.get("webhook")
     recipient_email = settings.get("recipient_email")
-    lang = settings.get("agent_language", "en") # Default to English
+    lang = settings.get("agent_language", "en")
     
-    # Get translation dict
     t = TRANSLATIONS.get(lang, TRANSLATIONS["en"])
 
     if not connector:
-        print(f"[ERROR] No connector found for: {source_type}")
+        print(f"[ERROR] ❌ No connector for: {source_type}")
         return
 
-    print(f"[DAEMON] Start {workflow['name']} (Lang: {lang})")
+    print(f"[DAEMON] ✅ Agent '{workflow['name']}' STARTED (Scan: {source_type})")
 
     while True:
         try:
             token = db["credentials"].get(source_type)
-            # Pass language settings to connector (for internal formatting like Notion)
+            if not token:
+                print(f"[DAEMON] ⚠️ Agent '{workflow['name']}' paused: Missing {source_type} key.")
+                await asyncio.sleep(60)
+                continue
+
             items = await connector.fetch(settings, token)
             
             batch = []
@@ -96,28 +95,37 @@ async def run_infinite_loop(workflow: dict):
             
             for item in items:
                 if not item["is_ready"]: continue
-                key = item["unique_key"]
+                
+                # --- ISOLATION DE LA MÉMOIRE ---
+                # Avant : key = item["unique_key"]  (ex: notion:123) -> Partagé par tout le monde
+                # Après : On préfixe avec l'ID de l'agent pour que chacun ait sa mémoire
+                raw_key = item["unique_key"]
+                isolated_key = f"{workflow_id}:{raw_key}"
+                
                 cur_ver = item["fingerprint"]
-                last_ver = db["item_states"].get(key)
+                last_ver = db["item_states"].get(isolated_key)
 
-                if last_ver is None or last_ver != cur_ver:
-                    item["is_update"] = (last_ver is not None)
+                if last_ver is None: 
+                    item["is_update"] = False
                     batch.append(item)
-                    db["item_states"][key] = cur_ver
+                    db["item_states"][isolated_key] = cur_ver
+                    changed = True
+                elif last_ver != cur_ver:
+                    item["is_update"] = True
+                    batch.append(item)
+                    db["item_states"][isolated_key] = cur_ver
                     changed = True
             
             # --- ACTION 1: DISCORD ---
             if batch and webhook:
                 bot_name = settings.get("bot_name", "AutoNexus")
+                print(f"[ACTION] 💬 Sending Discord for '{workflow['name']}' ({len(batch)} items)")
                 for v in batch:
-                    emoji = "📝" if v["is_update"] else "✅"
-                    title_prefix = t["update"] if v["is_update"] else t["new"]
-                    
                     embed = {
-                        "title": f"{emoji} {title_prefix}: {settings.get('query')}",
+                        "title": f"💬 {t['new']}: {settings.get('query')}",
                         "description": v['content'],
-                        "color": 0xF1C40F if v["is_update"] else 0x3498DB,
-                        "fields": [{"name": t["link"], "value": f"[{t['link']}]({v['link']})"}],
+                        "color": 0x7289DA,
+                        "fields": [{"name": t["link"], "value": f"[Go]({v['link']})"}],
                         "footer": {"text": f"{t['footer']} {source_type.capitalize()}"},
                         "timestamp": datetime.now(timezone.utc).isoformat()
                     }
@@ -128,68 +136,65 @@ async def run_infinite_loop(workflow: dict):
             if batch and recipient_email:
                 gmail_creds = db["credentials"].get("gmail")
                 if gmail_creds:
-                    # We pass the language to the Gmail connector
+                    print(f"[ACTION] 📧 Sending Email for '{workflow['name']}' to {recipient_email}")
                     await gmail.send_notification(settings, batch, gmail_creds, lang)
                 else:
-                    print("[DAEMON] Cannot send email: Missing Gmail credentials.")
+                    print(f"[ACTION] ❌ EMAIL FAILED: No 'gmail' key found in Connections!")
             
             if changed: save_db()
 
         except Exception as e:
-            print(f"[LOOP ERROR] {e}")
+            print(f"[LOOP ERROR] Agent '{workflow['name']}': {e}")
         
         await asyncio.sleep(60)
 
-# --- Lifespan & App ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    print("--- STARTING AUTONEXUS ---")
     load_db()
+    active_count = 0
     for wf in db["workflows"]:
         if wf.get("status") == "active":
             asyncio.create_task(run_infinite_loop(wf))
+            active_count += 1
+    print(f"[SYSTEM] {active_count} agents relaunched.")
+    print("--------------------------")
     yield
+    print("--- STOPPING AUTONEXUS ---")
     save_db()
 
-app = FastAPI(title="AutoNexus API", version="15.0.0 - Polyglot AI", lifespan=lifespan)
+app = FastAPI(title="AutoNexus API", version="18.0.0 - Isolated Memory", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
-# --- Models ---
 class ChatRequest(BaseModel): message: str; history: List[Dict[str, str]]
 class CredentialInput(BaseModel): serviceId: str; apiKey: str
 class WorkflowConfig(BaseModel): serviceSource: str; serviceDest: str; settings: Dict[str, Any]
 class AgentResponse(BaseModel): role: str="agent"; content: str; type: str="text"; formData: Optional[Dict[str, Any]]=None
 
-# --- Logic IA (Polyglot) ---
 def analyze_intent_with_llm(user_input: str):
     openai_key = db["credentials"].get("openai")
     if openai_key:
         try:
             client = OpenAI(api_key=openai_key)
-            
             prompt = """
             You are the AutoNexus Architect.
-            
-            INSTRUCTIONS:
-            1. DETECT the language of the user's input (French, English, Spanish, etc.).
-            2. REPLY in the SAME language as the user.
-            3. Configure the agent based on the request.
-            4. ALWAYS include a field 'agent_language' in the form so the user can choose the notification language (e.g. 'fr', 'en', 'es').
-            
+            RULES:
+            - READ/LISTEN Discord -> serviceSource="discord". REQUIRED: 'channel_id', 'query'.
+            - READ Notion -> serviceSource="notion".
+            - READ Twitter -> serviceSource="twitter".
+            - Destination Email -> serviceDest="email". Field: 'recipient_email'.
             JSON SCHEMA:
             {
-                "type": "form", 
-                "content": "Reply text in User's Language...",
+                "type": "form", "content": "Explanation...",
                 "formData": {
-                    "serviceSource": "notion" | "twitter",
+                    "serviceSource": "notion" | "twitter" | "discord",
                     "serviceDest": "discord" | "email",
                     "fields": [
-                        {"label": "Translated Label...", "key": "query", "type": "text"},
-                        // Add conditionally webhook OR recipient_email
-                        {"label": "Email...", "key": "recipient_email", "type": "text"},
-                        {"label": "Bot Name...", "key": "bot_name", "type": "text"},
-                        
-                        // MANDATORY LANGUAGE FIELD
-                        {"label": "Notification Language (fr/en)", "key": "agent_language", "type": "text", "placeholder": "fr"}
+                        {"label": "Keyword/Query", "key": "query", "type": "text"},
+                        {"label": "Channel ID (Numbers)", "key": "channel_id", "type": "text"},
+                        {"label": "Email", "key": "recipient_email", "type": "text"},
+                        {"label": "Bot Name", "key": "bot_name", "type": "text"},
+                        {"label": "Language (fr/en)", "key": "agent_language", "type": "text", "placeholder": "fr"}
                     ]
                 }
             }
@@ -199,43 +204,22 @@ def analyze_intent_with_llm(user_input: str):
                 messages=[{"role": "system", "content": prompt}, {"role": "user", "content": user_input}], 
                 response_format={"type": "json_object"}
             )
-            ai_resp = json.loads(res.choices[0].message.content)
-            if "content" not in ai_resp: ai_resp["content"] = "Config ready."
-            return ai_resp
-            
-        except Exception as e: return {"type": "text", "content": f"AI Error: {e}"}
-    
-    # Fallback Manual (Default English but hints at AI)
-    return {"type": "text", "content": "Please connect OpenAI Key to enable multi-language support and dynamic analysis."}
-
-# --- Welcome Message (Localized) ---
-async def send_discord_welcome(workflow: dict):
-    settings = workflow.get("settings", {})
-    webhook = settings.get("webhook")
-    lang = settings.get("agent_language", "en")
-    t = TRANSLATIONS.get(lang, TRANSLATIONS["en"])
-    
-    if not webhook: return
-    
-    embed = {
-        "title": f"{t['welcome_title']} : {settings.get('bot_name')}",
-        "description": t['welcome_desc'],
-        "color": 0x57F287,
-        "fields": [
-            {"name": t['source_label'], "value": workflow['source'], "inline": True}, 
-            {"name": t['query_label'], "value": settings.get('query'), "inline": True}
-        ],
-        "footer": {"text": f"ID: {workflow['id']}"}
-    }
-    async with httpx.AsyncClient() as client:
-        try: await client.post(webhook, json={"username": "AutoNexus", "embeds": [embed]})
+            return json.loads(res.choices[0].message.content)
         except: pass
+    
+    u = user_input.lower()
+    if "salon" in u or "channel" in u or "discord" in u:
+        return {"type": "form", "content": "Manual Discord Config.", "formData": {"serviceSource": "discord", "serviceDest": "email", "fields": [{"label": "Channel ID", "key": "channel_id", "type": "text"}, {"label": "Keyword", "key": "query", "type": "text"}, {"label": "Email", "key": "recipient_email", "type": "text"}, {"label": "Language", "key": "agent_language", "type": "text"}]}}
+    return {"type": "text", "content": "I can read Discord, Notion, or Twitter."}
 
-# --- Endpoints ---
 @app.post("/api/credentials")
 async def save_creds(c: CredentialInput):
-    db["credentials"][c.serviceId] = c.apiKey
+    final_key = c.apiKey
+    if c.serviceId == "gmail":
+        final_key = c.apiKey.replace(" ", "").strip()
+    db["credentials"][c.serviceId] = final_key
     save_db()
+    print(f"[SECURITY] Key saved for: {c.serviceId}")
     return {"status": "success"}
 
 @app.get("/api/credentials/check/{sid}")
@@ -252,17 +236,13 @@ async def deploy(c: WorkflowConfig, bg: BackgroundTasks):
     }
     db["workflows"].append(wf)
     save_db()
-    
-    if c.settings.get("webhook"):
-        bg.add_task(send_discord_welcome, wf)
-
     asyncio.create_task(run_infinite_loop(wf))
-    return {"status": "success", "message": "Agent deployed."}
+    return {"status": "success", "message": "Agent deployed and active."}
 
 @app.get("/api/workflows")
 async def get_wfs(): return db["workflows"]
 @app.get("/api/system/stats")
-async def stats(): return {"cpu": "11%", "active_agents": len(db["workflows"])}
+async def stats(): return {"cpu": "12%", "active_agents": len(db["workflows"])}
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
