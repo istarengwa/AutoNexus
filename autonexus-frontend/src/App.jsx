@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   LayoutDashboard, Network, Bot, Settings, Terminal, Send, Cpu, 
-  CheckCircle, AlertCircle, Activity, Play, Pause, Trash2, Box, Server, Wifi, WifiOff, Key, X, Mail
+  CheckCircle, AlertCircle, Activity, Play, Pause, Trash2, Box, Server, Wifi, WifiOff, Key, X, Mail, MessageSquare
 } from 'lucide-react';
 
 const API_URL = "http://localhost:8000/api";
@@ -21,11 +21,12 @@ const StatusBadge = ({ status }) => {
 
 const ConnectionsTab = ({ isBackendOnline }) => {
   const [services, setServices] = useState([
+    // Mise à jour visuelle pour Discord
+    { id: 'discord', name: 'Discord Bot', icon: '🤖', configured: false, desc: 'Read Channels & Send Messages', placeholder: 'Bot Token (M.xxxx...)' },
     { id: 'twitter', name: 'X (Twitter)', icon: '🐦', configured: false, desc: 'Bearer Token', placeholder: 'AAAA...' },
     { id: 'notion', name: 'Notion', icon: '📝', configured: false, desc: 'Integration Secret', placeholder: 'secret_...' },
     { id: 'gmail', name: 'Gmail SMTP', icon: '📧', configured: false, desc: 'Email:AppPassword', placeholder: 'me@gmail.com:xxxx xxxx xxxx xxxx' },
     { id: 'openai', name: 'OpenAI', icon: '🧠', configured: false, desc: 'Agent Intelligence', placeholder: 'sk-...' },
-    { id: 'discord', name: 'Discord Bot', icon: '👾', configured: false, desc: 'Bot Token', placeholder: 'Bot Token' },
   ]);
 
   const [selectedService, setSelectedService] = useState(null);
@@ -76,6 +77,7 @@ const ConnectionsTab = ({ isBackendOnline }) => {
                 </label>
                 <input type="password" value={apiKeyInput} onChange={(e) => setApiKeyInput(e.target.value)} placeholder={selectedService.placeholder} className="w-full bg-slate-800 border border-slate-700 rounded p-3 text-white outline-none font-mono text-sm" />
                 {selectedService.id === 'gmail' && <p className="text-[10px] text-emerald-400 mt-1">Required format: email@gmail.com:abcd efgh ijkl mnop</p>}
+                {selectedService.id === 'discord' && <p className="text-[10px] text-emerald-400 mt-1">Use a Bot Token (not a webhook) to read channels.</p>}
               </div>
               <button onClick={handleSave} className="w-full bg-blue-600 hover:bg-blue-500 text-white py-2 rounded-lg font-medium transition-colors">Save Credential</button>
             </div>
@@ -126,7 +128,7 @@ const DashboardTab = ({ setActiveTab, isBackendOnline }) => {
 };
 
 const AgentBuilderTab = ({ setActiveTab }) => {
-  const [chatHistory, setChatHistory] = useState([{ role: 'agent', content: "Describe your automation need (e.g., 'Watch Notion for Project Alpha and send me an email').", type: 'text' }]);
+  const [chatHistory, setChatHistory] = useState([{ role: 'agent', content: "Describe your automation need (e.g., 'Listen to Discord channel for \"react\" and email me').", type: 'text' }]);
   const [userInput, setUserInput] = useState('');
   const [formData, setFormData] = useState({});
   const [formMeta, setFormMeta] = useState({ source: '', dest: '' });
