@@ -1,88 +1,120 @@
 import httpx
 import asyncio
-from datetime import datetime, timezone
+import base64
+
+# Fichiers à ignorer pour ne pas polluer l'IA avec du bruit
+IGNORED_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.lock', '.pdf', '.zip', '.tar', '.gz', '.mp4', '.exe', '.bin']
+IGNORED_DIRS = ['.git', 'node_modules', 'vendor', 'dist', 'build', '__pycache__']
+
+async def get_file_content(client, url, headers):
+    """Télécharge et décode un fichier depuis GitHub API"""
+    try:
+        res = await client.get(url, headers=headers)
+        if res.status_code == 200:
+            data = res.json()
+            # GitHub renvoie souvent en base64
+            if data.get("encoding") == "base64":
+                content = base64.b64decode(data["content"]).decode('utf-8', errors='ignore')
+                return content
+            return data.get("content", "") # Cas rare brut
+    except:
+        return ""
+    return ""
 
 async def fetch(settings: dict, token: str):
     """
-    Récupère les commits (Mode Max Capacity).
+    Mode Hybride :
+    - Si 'custom_prompt' présent : Scan des FICHIERS (Snapshot du code actuel).
+    - Sinon : Scan des COMMITS (Surveillance d'activité).
     """
     raw_query = settings.get("query", "").strip()
+    has_prompt = bool(settings.get("custom_prompt"))
     
-    # Mode Deep Code automatique si prompt IA présent
-    if settings.get("custom_prompt"):
-        mode = "deep_code"
-    else:
-        mode = "commits_only"
-
     if not token or not raw_query: return []
     
+    # Nettoyage URL
     repo_name = raw_query.replace("https://github.com/", "").replace("http://github.com/", "")
     if repo_name.endswith("/"): repo_name = repo_name[:-1]
     
-    base_url = f"https://api.github.com/repos/{repo_name}"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github.v3+json"
-    }
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
     
+    results = []
+
     try:
         async with httpx.AsyncClient() as client:
-            # NO LIMIT: On demande 100 commits (le max par page autorisé par GitHub)
-            # Si vous en voulez plus, il faudrait gérer la pagination, mais 100 couvre déjà "80 atoms"
-            limit = 100 
-            res = await client.get(f"{base_url}/commits", headers=headers, params={"per_page": limit})
             
-            if res.status_code != 200:
-                print(f"[GITHUB API ERROR] {res.status_code} - {res.text}")
-                return []
-            
-            data = res.json()
-            results = []
-            
-            for commit in data:
-                sha = commit.get("sha")
-                html_url = commit.get("html_url")
-                commit_msg = commit.get("commit", {}).get("message", "")
-                author = commit.get("commit", {}).get("author", {}).get("name", "Unknown")
+            # --- MODE 1 : ANALYSE DU CODE (SNAPSHOT) ---
+            if has_prompt:
+                print(f"[GITHUB] Mode Analyse de Code activé pour {repo_name}")
                 
-                final_content = f"Commit: {commit_msg}\nAuthor: {author}"
+                # 1. Récupérer l'arbre des fichiers (Recursive)
+                tree_url = f"https://api.github.com/repos/{repo_name}/git/trees/main?recursive=1"
+                # Fallback sur 'master' si 'main' n'existe pas (gestion d'erreur basique)
+                res = await client.get(tree_url, headers=headers)
+                if res.status_code == 404:
+                    tree_url = f"https://api.github.com/repos/{repo_name}/git/trees/master?recursive=1"
+                    res = await client.get(tree_url, headers=headers)
+                
+                if res.status_code != 200:
+                    print(f"[GITHUB ERROR] Impossible de lire l'arborescence: {res.status_code}")
+                    return []
 
-                # --- DEEP SCAN : Lecture TOTALE des fichiers ---
-                if mode == 'deep_code':
-                    code_changes = ""
-                    try:
-                        detail_res = await client.get(f"{base_url}/commits/{sha}", headers=headers)
-                        if detail_res.status_code == 200:
-                            detail = detail_res.json()
-                            files = detail.get("files", [])
-                            
-                            # NO LIMIT: On lit TOUS les fichiers modifiés dans le commit (pas de [:5])
-                            for f in files: 
-                                filename = f.get("filename")
-                                patch = f.get("patch", "[Binary/Large]")
-                                
-                                # On garde une petite sécurité (10k chars par fichier) pour éviter les crashs réseau
-                                # mais c'est très large.
-                                if len(patch) > 10000: patch = patch[:10000] + "\n... (truncated)"
-                                code_changes += f"\n📄 {filename}\n```diff\n{patch}\n```\n"
-                            
-                            final_content += f"\n\nCODE CHANGES:\n{code_changes}"
-                    except: pass
+                tree = res.json().get("tree", [])
                 
-                results.append({
-                    "unique_key": f"github:{sha}",
-                    "fingerprint": sha, 
-                    "content": final_content,
-                    "link": html_url,
-                    "is_ready": True,
-                    "is_update": False 
-                })
+                # 2. Filtrer les fichiers pertinents
+                files_to_scan = []
+                for item in tree:
+                    if item["type"] == "blob": # C'est un fichier
+                        path = item["path"]
+                        # Filtre extensions et dossiers inutiles
+                        if any(path.endswith(ext) for ext in IGNORED_EXTS): continue
+                        if any(bad_dir in path for bad_dir in IGNORED_DIRS): continue
+                        
+                        files_to_scan.append(item)
+
+                # Limite de sécurité : on ne lit que les 60 premiers fichiers pour l'instant
+                # (suffisant pour votre cas "Semaine 1")
+                files_to_scan = files_to_scan[:60]
                 
-                # Délai minimal pour éviter le ban IP GitHub
-                if mode == 'deep_code': await asyncio.sleep(0.1)
-                
+                print(f"[GITHUB] {len(files_to_scan)} fichiers pertinents identifiés. Téléchargement...")
+
+                # 3. Télécharger le contenu
+                for f in files_to_scan:
+                    content = await get_file_content(client, f["url"], headers)
+                    if not content: continue
+                    
+                    # On crée un item "Code"
+                    results.append({
+                        "unique_key": f"github_file:{f['sha']}", # Le SHA change si le fichier change
+                        "fingerprint": f["sha"], 
+                        "content": f"📄 FICHIER: {f['path']}\n\n{content}",
+                        "link": f"https://github.com/{repo_name}/blob/main/{f['path']}",
+                        "is_ready": True,
+                        "is_update": False 
+                    })
+                    # Petite pause
+                    await asyncio.sleep(0.1)
+
+            # --- MODE 2 : SURVEILLANCE COMMITS (Classique) ---
+            else:
+                print(f"[GITHUB] Mode Surveillance Commits pour {repo_name}")
+                url = f"https://api.github.com/repos/{repo_name}/commits"
+                res = await client.get(url, headers=headers, params={"per_page": 20})
+                if res.status_code == 200:
+                    for commit in res.json():
+                        msg = commit.get("commit", {}).get("message", "")
+                        author = commit.get("commit", {}).get("author", {}).get("name", "")
+                        results.append({
+                            "unique_key": f"github:{commit['sha']}",
+                            "fingerprint": commit['sha'],
+                            "content": f"Commit: {msg} (par {author})",
+                            "link": commit.get("html_url"),
+                            "is_ready": True,
+                            "is_update": False
+                        })
+
             return results
 
     except Exception as e:
-        print(f"[GITHUB ERROR] {e}")
+        print(f"[GITHUB CRITICAL ERROR] {e}")
         return []
