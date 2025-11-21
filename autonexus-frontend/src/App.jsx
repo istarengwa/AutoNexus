@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   LayoutDashboard, Network, Bot, Settings, Terminal, Send, Cpu, 
-  CheckCircle, AlertCircle, Activity, Play, Pause, Trash2, Box, Server, Wifi, WifiOff, Key, X, Mail, MessageSquare
+  CheckCircle, AlertCircle, Activity, Play, Pause, Trash2, Box, Server, Wifi, WifiOff, Key, X, Mail, MessageSquare, Edit2
 } from 'lucide-react';
 
 const API_URL = "http://localhost:8000/api";
@@ -14,14 +14,13 @@ const StatusBadge = ({ status }) => {
   };
   return (
     <span className={`px-2 py-1 rounded-full text-xs font-medium border ${colors[status] || colors.offline}`}>
-      {status.toUpperCase()}
+      {status ? status.toUpperCase() : 'UNKNOWN'}
     </span>
   );
 };
 
 const ConnectionsTab = ({ isBackendOnline }) => {
   const [services, setServices] = useState([
-    // Mise à jour visuelle pour Discord
     { id: 'discord', name: 'Discord Bot', icon: '🤖', configured: false, desc: 'Read Channels & Send Messages', placeholder: 'Bot Token (M.xxxx...)' },
     { id: 'twitter', name: 'X (Twitter)', icon: '🐦', configured: false, desc: 'Bearer Token', placeholder: 'AAAA...' },
     { id: 'notion', name: 'Notion', icon: '📝', configured: false, desc: 'Integration Secret', placeholder: 'secret_...' },
@@ -76,8 +75,6 @@ const ConnectionsTab = ({ isBackendOnline }) => {
                   {selectedService.id === 'gmail' ? 'Email : App Password' : 'API Key / Token'}
                 </label>
                 <input type="password" value={apiKeyInput} onChange={(e) => setApiKeyInput(e.target.value)} placeholder={selectedService.placeholder} className="w-full bg-slate-800 border border-slate-700 rounded p-3 text-white outline-none font-mono text-sm" />
-                {selectedService.id === 'gmail' && <p className="text-[10px] text-emerald-400 mt-1">Required format: email@gmail.com:abcd efgh ijkl mnop</p>}
-                {selectedService.id === 'discord' && <p className="text-[10px] text-emerald-400 mt-1">Use a Bot Token (not a webhook) to read channels.</p>}
               </div>
               <button onClick={handleSave} className="w-full bg-blue-600 hover:bg-blue-500 text-white py-2 rounded-lg font-medium transition-colors">Save Credential</button>
             </div>
@@ -104,21 +101,101 @@ const ConnectionsTab = ({ isBackendOnline }) => {
 
 const DashboardTab = ({ setActiveTab, isBackendOnline }) => {
   const [workflows, setWorkflows] = useState([]);
-  useEffect(() => {
+  const [editingWf, setEditingWf] = useState(null); // For Edit Modal
+  const [editForm, setEditForm] = useState({ bot_name: '', query: '' });
+
+  const fetchWorkflows = () => {
     if (isBackendOnline) fetch(`${API_URL}/workflows`).then(r => r.json()).then(data => setWorkflows(data)).catch(e => console.error(e));
-  }, [isBackendOnline]);
+  };
+
+  useEffect(() => { fetchWorkflows(); }, [isBackendOnline]);
+
+  const toggleStatus = async (id, currentStatus) => {
+    const newStatus = currentStatus === 'active' ? 'paused' : 'active';
+    try {
+      await fetch(`${API_URL}/agent/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+      });
+      fetchWorkflows();
+    } catch (e) { console.error(e); }
+  };
+
+  const deleteAgent = async (id) => {
+    if (!confirm("Are you sure you want to delete this agent?")) return;
+    try {
+      await fetch(`${API_URL}/agent/${id}`, { method: 'DELETE' });
+      fetchWorkflows();
+    } catch (e) { console.error(e); }
+  };
+
+  const saveEdit = async () => {
+    try {
+      await fetch(`${API_URL}/agent/${editingWf.id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settings: editForm })
+      });
+      setEditingWf(null);
+      fetchWorkflows();
+    } catch (e) { console.error(e); }
+  };
+
+  const openEdit = (wf) => {
+    setEditingWf(wf);
+    setEditForm({ bot_name: wf.name, query: wf.settings?.query || '' });
+  };
 
   return (
-    <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+    <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden relative">
+      
+      {/* EDIT MODAL */}
+      {editingWf && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-900 border border-slate-700 p-6 rounded-xl w-full max-w-sm shadow-2xl">
+            <h3 className="text-xl font-bold text-white mb-4">Edit Agent</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-slate-400">Bot Name</label>
+                <input className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white" value={editForm.bot_name} onChange={e => setEditForm({...editForm, bot_name: e.target.value})} />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400">Query / Keyword</label>
+                <input className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white" value={editForm.query} onChange={e => setEditForm({...editForm, query: e.target.value})} />
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button onClick={saveEdit} className="flex-1 bg-emerald-600 text-white py-2 rounded hover:bg-emerald-500">Save</button>
+                <button onClick={() => setEditingWf(null)} className="flex-1 bg-slate-700 text-white py-2 rounded hover:bg-slate-600">Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="p-6 border-b border-slate-700 flex justify-between items-center">
         <h2 className="text-lg font-semibold text-white">Active Agents</h2>
         <button onClick={() => setActiveTab('builder')} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm flex items-center"><Bot className="w-4 h-4 mr-2" /> Create</button>
       </div>
       <div className="divide-y divide-slate-700">
         {workflows.map((wf) => (
-          <div key={wf.id} className="p-6 flex items-center justify-between">
-            <div><h3 className="font-medium text-white">{wf.name}</h3><p className="text-slate-400 text-sm">{wf.description || `Source: ${wf.source}`}</p></div>
-            <StatusBadge status={wf.status} />
+          <div key={wf.id} className="p-6 flex items-center justify-between hover:bg-slate-750 transition-colors">
+            <div className="flex-1">
+              <div className="flex items-center gap-3 mb-1">
+                <h3 className="font-medium text-white">{wf.name}</h3>
+                <StatusBadge status={wf.status} />
+              </div>
+              <p className="text-slate-400 text-sm mb-2">Source: {wf.source} • Target: {wf.settings?.query}</p>
+            </div>
+            <div className="flex items-center gap-2 ml-4">
+              <button onClick={() => openEdit(wf)} className="p-2 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white transition-colors" title="Edit Settings">
+                <Edit2 className="w-4 h-4" />
+              </button>
+              <button onClick={() => toggleStatus(wf.id, wf.status)} className={`p-2 rounded-lg transition-colors ${wf.status === 'active' ? 'text-emerald-400 hover:bg-emerald-900/20' : 'text-amber-400 hover:bg-amber-900/20'}`} title={wf.status === 'active' ? "Pause" : "Resume"}>
+                {wf.status === 'active' ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+              </button>
+              <button onClick={() => deleteAgent(wf.id)} className="p-2 hover:bg-red-900/30 rounded-lg text-slate-400 hover:text-red-400 transition-colors" title="Delete">
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         ))}
         {workflows.length === 0 && <div className="p-8 text-center text-slate-500">No agents configured.</div>}
