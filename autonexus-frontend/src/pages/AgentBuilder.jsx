@@ -3,7 +3,7 @@ import { Send } from 'lucide-react';
 import { api } from '../services/api';
 
 export default function AgentBuilder() {
-  const [chatHistory, setChatHistory] = useState([{ role: 'agent', content: "Describe your automation need (e.g., 'Listen to Discord channel for \"react\" and email me').", type: 'text' }]);
+  const [chatHistory, setChatHistory] = useState([{ role: 'agent', content: "Describe your automation need (e.g., 'Analyze Discord chat and create Atoms').", type: 'text' }]);
   const [userInput, setUserInput] = useState('');
   const [formData, setFormData] = useState({});
   const [formMeta, setFormMeta] = useState({ source: '', dest: '' });
@@ -48,12 +48,20 @@ export default function AgentBuilder() {
                 {msg.formData.fields.map((f, idx) => (
                   <div key={idx}>
                     <label className="text-xs text-slate-400 block mb-1">{f.label}</label>
-                    <input 
-                      type={f.type} 
-                      placeholder={f.placeholder}
-                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-white outline-none focus:border-blue-500"
-                      onChange={e => { setFormData(prev => ({ ...prev, [f.key]: e.target.value })); }}
-                    />
+                    {f.type === 'textarea' ? (
+                       <textarea 
+                         placeholder={f.placeholder}
+                         className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-white outline-none focus:border-blue-500 h-20 font-mono"
+                         onChange={e => { setFormData(prev => ({ ...prev, [f.key]: e.target.value })); }}
+                       />
+                    ) : (
+                       <input 
+                         type={f.type} 
+                         placeholder={f.placeholder}
+                         className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-white outline-none focus:border-blue-500"
+                         onChange={e => { setFormData(prev => ({ ...prev, [f.key]: e.target.value })); }}
+                       />
+                    )}
                   </div>
                 ))}
                 <button onClick={deploy} className="w-full bg-emerald-600 hover:bg-emerald-500 py-2 rounded text-sm font-bold mt-2 transition-colors">Activate Agent</button>

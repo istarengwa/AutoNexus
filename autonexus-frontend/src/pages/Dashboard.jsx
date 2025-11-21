@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Bot, Edit2, Pause, Play, Trash2 } from 'lucide-react';
+import { Bot, Edit2, Pause, Play, Trash2, Brain } from 'lucide-react';
 import StatusBadge from '../components/StatusBadge';
 import { api } from '../services/api';
 
 export default function Dashboard({ isBackendOnline, setActiveTab }) {
   const [workflows, setWorkflows] = useState([]);
   const [editingWf, setEditingWf] = useState(null);
-  const [editForm, setEditForm] = useState({ bot_name: '', query: '' });
+  // Ajout de custom_prompt dans le state du formulaire
+  const [editForm, setEditForm] = useState({ bot_name: '', query: '', custom_prompt: '' });
 
   const fetchWorkflows = () => {
     if (isBackendOnline) {
@@ -42,7 +43,12 @@ export default function Dashboard({ isBackendOnline, setActiveTab }) {
 
   const openEdit = (wf) => {
     setEditingWf(wf);
-    setEditForm({ bot_name: wf.name, query: wf.settings?.query || '' });
+    // Pré-remplissage du formulaire
+    setEditForm({ 
+      bot_name: wf.name, 
+      query: wf.settings?.query || '',
+      custom_prompt: wf.settings?.custom_prompt || '' 
+    });
   };
 
   return (
@@ -51,20 +57,37 @@ export default function Dashboard({ isBackendOnline, setActiveTab }) {
       {/* Edit Modal */}
       {editingWf && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-900 border border-slate-700 p-6 rounded-xl w-full max-w-sm shadow-2xl">
-            <h3 className="text-xl font-bold text-white mb-4">Edit Agent</h3>
-            <div className="space-y-3">
+          <div className="bg-slate-900 border border-slate-700 p-6 rounded-xl w-full max-w-md shadow-2xl">
+            <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+              <Edit2 className="w-5 h-5" /> Edit Agent
+            </h3>
+            <div className="space-y-4">
               <div>
-                <label className="text-xs text-slate-400">Bot Name</label>
-                <input className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white" value={editForm.bot_name} onChange={e => setEditForm({...editForm, bot_name: e.target.value})} />
+                <label className="text-xs text-slate-400 uppercase font-bold">Bot Name</label>
+                <input className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white mt-1" value={editForm.bot_name} onChange={e => setEditForm({...editForm, bot_name: e.target.value})} />
               </div>
               <div>
-                <label className="text-xs text-slate-400">Query / Keyword</label>
-                <input className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white" value={editForm.query} onChange={e => setEditForm({...editForm, query: e.target.value})} />
+                <label className="text-xs text-slate-400 uppercase font-bold">Target / Query</label>
+                <input className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white mt-1" value={editForm.query} onChange={e => setEditForm({...editForm, query: e.target.value})} />
               </div>
+              
+              {/* NEW: AI Prompt Field */}
+              <div>
+                <label className="text-xs text-purple-400 uppercase font-bold flex items-center gap-1">
+                  <Brain className="w-3 h-3" /> AI Instructions (Pre-prompt)
+                </label>
+                <textarea 
+                  className="w-full bg-slate-800 border border-purple-500/30 rounded p-2 text-white mt-1 text-xs font-mono h-24 focus:border-purple-500 outline-none" 
+                  value={editForm.custom_prompt} 
+                  onChange={e => setEditForm({...editForm, custom_prompt: e.target.value})}
+                  placeholder="Ex: Summarize these messages into a single paragraph. Format as JSON Atom..."
+                />
+                <p className="text-[10px] text-slate-500 mt-1">Leave empty to send raw data directly.</p>
+              </div>
+
               <div className="flex gap-2 pt-2">
-                <button onClick={saveEdit} className="flex-1 bg-emerald-600 text-white py-2 rounded hover:bg-emerald-500">Save</button>
-                <button onClick={() => setEditingWf(null)} className="flex-1 bg-slate-700 text-white py-2 rounded hover:bg-slate-600">Cancel</button>
+                <button onClick={saveEdit} className="flex-1 bg-emerald-600 text-white py-2 rounded hover:bg-emerald-500 font-medium">Save Changes</button>
+                <button onClick={() => setEditingWf(null)} className="flex-1 bg-slate-700 text-white py-2 rounded hover:bg-slate-600 font-medium">Cancel</button>
               </div>
             </div>
           </div>
@@ -83,11 +106,20 @@ export default function Dashboard({ isBackendOnline, setActiveTab }) {
               <div className="flex items-center gap-3 mb-1">
                 <h3 className="font-medium text-white">{wf.name}</h3>
                 <StatusBadge status={wf.status} />
+                {wf.settings?.custom_prompt && (
+                  <span className="text-[10px] bg-purple-900/30 text-purple-300 border border-purple-500/30 px-2 py-0.5 rounded flex items-center gap-1">
+                    <Brain className="w-3 h-3" /> AI-Powered
+                  </span>
+                )}
               </div>
-              <p className="text-slate-400 text-sm mb-2">Source: {wf.source} • Target: {wf.settings?.query}</p>
+              <p className="text-slate-400 text-sm mb-2 flex items-center gap-2">
+                <span className="capitalize">{wf.source}</span> 
+                <span className="text-slate-600">→</span> 
+                <span className="font-mono bg-slate-900 px-1 rounded">{wf.settings?.query}</span>
+              </p>
             </div>
             <div className="flex items-center gap-2 ml-4">
-              <button onClick={() => openEdit(wf)} className="p-2 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white transition-colors" title="Edit">
+              <button onClick={() => openEdit(wf)} className="p-2 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white transition-colors" title="Edit Configuration">
                 <Edit2 className="w-4 h-4" />
               </button>
               <button onClick={() => toggleStatus(wf.id, wf.status)} className={`p-2 rounded-lg transition-colors ${wf.status === 'active' ? 'text-emerald-400 hover:bg-emerald-900/20' : 'text-amber-400 hover:bg-amber-900/20'}`} title={wf.status === 'active' ? "Pause" : "Resume"}>

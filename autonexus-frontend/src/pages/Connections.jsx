@@ -3,6 +3,8 @@ import { X } from 'lucide-react';
 import { api } from '../services/api';
 
 const SERVICES_CONFIG = [
+  // Added GitHub
+  { id: 'github', name: 'GitHub', icon: '🐙', desc: 'Read Repos & Commits', placeholder: 'Personal Access Token (ghp_...)' },
   { id: 'discord', name: 'Discord Bot', icon: '🤖', desc: 'Read Channels & Send Messages', placeholder: 'Bot Token (M.xxxx...)' },
   { id: 'twitter', name: 'X (Twitter)', icon: '🐦', desc: 'Bearer Token', placeholder: 'AAAA...' },
   { id: 'notion', name: 'Notion', icon: '📝', desc: 'Integration Secret', placeholder: 'secret_...' },
@@ -18,7 +20,6 @@ export default function Connections({ isBackendOnline }) {
 
   useEffect(() => {
     if (isBackendOnline) {
-      // Check status for all services
       services.forEach(async (s) => {
         try {
           const data = await api.checkCredential(s.id);
@@ -48,7 +49,6 @@ export default function Connections({ isBackendOnline }) {
     <div className="space-y-6 relative">
       {statusMsg && <div className="absolute top-0 right-0 bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm animate-bounce">{statusMsg}</div>}
       
-      {/* Modal */}
       {selectedService && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
           <div className="bg-slate-900 border border-slate-700 p-6 rounded-xl w-full max-w-md shadow-2xl">
@@ -70,7 +70,6 @@ export default function Connections({ isBackendOnline }) {
         </div>
       )}
 
-      {/* Grid */}
       <div className="bg-slate-800 p-6 rounded-xl border border-slate-700">
         <h2 className="text-xl font-bold text-white mb-2">Connection Hub</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
