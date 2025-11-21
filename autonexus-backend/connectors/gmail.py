@@ -3,7 +3,6 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 
-# Templates de langues
 TEXTS = {
     "en": {
         "subject_prefix": "🔔 AutoNexus Alert:", "updates_for": "updates for",
@@ -18,15 +17,20 @@ TEXTS = {
 }
 
 async def send_notification(settings: dict, items: list, credentials_str: str, lang: str = "en"):
-    """
-    Sends email in the requested language.
-    """
-    if not credentials_str or ":" not in credentials_str: return
-    sender_email, app_password = credentials_str.split(":")
+    # LOG D'ERREUR AJOUTÉ ICI
+    if not credentials_str or ":" not in credentials_str: 
+        print(f"[GMAIL ERROR] Invalid credential format. Expected 'email:password', got: '{credentials_str[:5]}...'")
+        return
+    
+    parts = credentials_str.split(":")
+    sender_email = parts[0].strip()
+    # Double sécurité : on nettoie aussi ici au cas où
+    app_password = parts[1].replace(" ", "").strip()
+    
     recipient_email = settings.get("recipient_email") or sender_email 
+    
     if not items: return
 
-    # Select Language (Default to EN if unknown)
     t = TEXTS.get(lang, TEXTS["en"])
 
     subject = f"{t['subject_prefix']} {len(items)} {t['updates_for']} '{settings.get('query')}'"
@@ -68,13 +72,17 @@ async def send_notification(settings: dict, items: list, credentials_str: str, l
     msg['Subject'] = subject
     msg.attach(MIMEText(html_body, 'html'))
 
+    smtp_address = "smtp.gmail.com"
+    smtp_port = 587
+
     try:
-        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server = smtplib.SMTP(smtp_address, smtp_port)
         server.starttls()
         server.login(sender_email, app_password)
         text = msg.as_string()
         server.sendmail(sender_email, recipient_email, text)
         server.quit()
+        
         print(f"[GMAIL] Sent to {recipient_email} ({lang})")
     except Exception as e:
         print(f"[GMAIL ERROR] {e}")
